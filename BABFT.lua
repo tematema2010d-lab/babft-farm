@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════
---   ENI BabFT Suite v8.0 «Winter»  |  Delta / Android
+--   ENI BabFT Suite v8.1 «Winter»  |  Delta / Android
 --   для LO. всё своё, всё родное.
 -- ═══════════════════════════════════════════
 local Players = game:GetService("Players")
@@ -7,7 +7,6 @@ local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local RS = game:GetService("ReplicatedStorage")
 local lp = Players.LocalPlayer
 
 -- ── КООРДИНАТЫ ──
@@ -26,22 +25,14 @@ local state = {
     farm = false, flyFarm = false, antiafk = false,
     speed = 1.0, flySpeed = 800, flyPause = 0.4,
     gold = 0, status = "ожидание",
-    buildSpeed = 0.05, buildSize = 2, blocksPerShape = 30,
-    selectedShape = "Шар", selectedBlock = nil, selectedMaterial = nil,
-    flyV3 = false, noClip = false, previewing = false,
+    flyV3 = false, noClip = false,
 }
 local SPEED_STEPS = {1.0, 1.2, 1.4, 1.6, 1.8}
 local FLY_SPEED_STEPS = {200, 400, 800, 1600}
 local FLY_PAUSE_STEPS = {0.2, 0.3, 0.4, 0.5}
-local BUILD_SPEED_STEPS = {0.02, 0.05, 0.1, 0.2}
-local BUILD_SIZE_STEPS = {1, 2, 3, 4, 6}
-local BLOCKS_COUNT_STEPS = {10, 20, 30, 50, 80, 120}
-local SHAPES = {"Шар", "Купол", "Пирамида", "Цилиндр", "Стена", "Платформа"}
 local respawning = false
 
--- ═══════════════════════════════════════════
---   АВТО-ФАРМ
--- ═══════════════════════════════════════════
+-- ═══ АВТО-ФАРМ ═══
 local platform = nil
 local function spawnPlatform(pos)
     if platform then platform:Destroy() end
@@ -248,9 +239,7 @@ lp.Idled:Connect(function()
     vu:ClickButton2(Vector2.new())
 end)
 
--- ═══════════════════════════════════════════
---   FLY V3 (BodyVelocity — работает на Android)
--- ═══════════════════════════════════════════
+-- ═══ FLY V3 (BodyVelocity) ═══
 local flyBV = nil
 local flyBG = nil
 
@@ -299,9 +288,7 @@ RunService.RenderStepped:Connect(function()
     flyBG.CFrame = cam.CFrame
 end)
 
--- ═══════════════════════════════════════════
---   NOCLIP (кэш)
--- ═══════════════════════════════════════════
+-- ═══ NOCLIP ═══
 local cachedParts = {}
 task.spawn(function()
     while task.wait(1) do
@@ -336,309 +323,7 @@ RunService.Stepped:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════
---   БИЛД: из реальных блоков игры (из пластин)
--- ═══════════════════════════════════════════
-local function getOwnedBlocks()
-    local out = {}
-    local pg = lp:FindFirstChild("PlayerGui")
-    if not pg then return out end
-    local bg = pg:FindFirstChild("BuildGui")
-    if not bg then return out end
-    local inv = bg:FindFirstChild("InventoryFrame")
-    if not inv then return out end
-    local sf = inv:FindFirstChild("ScrollingFrame")
-    if not sf then return out end
-    local bf = sf:FindFirstChild("BlocksFrame")
-    if not bf then return out end
-    local data = lp:FindFirstChild("Data")
-    for _, btn in ipairs(bf:GetChildren()) do
-        if btn:IsA("ImageButton") or btn:IsA("TextButton") then
-            local name = btn.Name
-            local amount = 0
-            if data then
-                local cnt = data:FindFirstChild(name .. "Block") or data:FindFirstChild(name)
-                if cnt and cnt.Value then amount = cnt.Value end
-            end
-            if amount > 0 then
-                table.insert(out, {name = name, amount = amount, button = btn})
-            end
-        end
-    end
-    return out
-end
-
-local function getBlockModel(blockName)
-    local bp = RS:FindFirstChild("BuildingParts")
-    if not bp then return nil end
-    return bp:FindFirstChild(blockName)
-end
-
-local function newBlockPart(blockName, size, pos, shape)
-    local p = Instance.new("Part")
-    p.Size = size
-    p.Position = pos
-    p.Anchored = true
-    p.CanCollide = true
-    p.Color = Color3.fromRGB(200, 200, 210)
-    p.Material = Enum.Material.SmoothPlastic
-    if shape == "Ball" then p.Shape = Enum.PartType.Ball
-    elseif shape == "Cylinder" then p.Shape = Enum.PartType.Cylinder end
-    p.Name = "ENI_" .. (blockName or "Build")
-    p.Parent = workspace
-    return p
-end
-
-local function getFrontPos(offset)
-    local char = lp.Character
-    if not char then return Vector3.zero end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return Vector3.zero end
-    return hrp.Position + hrp.CFrame.LookVector * offset + Vector3.new(0, 8, 0)
-end
-
--- ПОЛЫЙ ШАР: только поверхность. N — общее число блоков, распределяем по оболочке.
-local function buildBallShell(base, N, size, blockName)
-    local R = size * 2.5
-    local total = math.max(12, N)
-    local shell = math.floor(total * 0.75)
-    local inner = total - shell
-    local task_gap = state.buildSpeed
-    for i = 1, shell do
-        local phi = math.acos(1 - 2 * (i - 0.5) / shell)
-        local theta = math.pi * (1 + 5^0.5) * i
-        local x = R * math.sin(phi) * math.cos(theta)
-        local y = R * math.cos(phi)
-        local z = R * math.sin(phi) * math.sin(theta)
-        newBlockPart(blockName, Vector3.new(size,size,size), base + Vector3.new(x, y, z), "Ball")
-        task.wait(task_gap)
-    end
-    for i = 1, inner do
-        local phi = math.acos(1 - 2 * (i - 0.5) / inner)
-        local theta = math.pi * (1 + 5^0.5) * i
-        local r = R * 0.6
-        local x = r * math.sin(phi) * math.cos(theta)
-        local y = r * math.cos(phi)
-        local z = r * math.sin(phi) * math.sin(theta)
-        newBlockPart(blockName, Vector3.new(size,size,size), base + Vector3.new(x, y, z), "Ball")
-        task.wait(task_gap)
-    end
-end
-
-local function buildDome(base, N, size, blockName)
-    local R = size * 3
-    local rings = 4
-    local perRing = math.max(4, math.floor(N / rings))
-    for ring = 1, rings do
-        local phi = (ring / (rings + 1)) * math.pi / 2
-        local r = R * math.sin(phi)
-        local y = R * math.cos(phi)
-        for i = 1, perRing do
-            local theta = (i / perRing) * math.pi * 2
-            newBlockPart(blockName, Vector3.new(size,size,size), base + Vector3.new(r*math.cos(theta), y, r*math.sin(theta)))
-            task.wait(state.buildSpeed)
-        end
-    end
-end
-
-local function buildPyramid(base, N, size, blockName)
-    local side = math.max(2, math.floor(math.sqrt(N)))
-    for l = 0, side - 1 do
-        local n = side - l
-        if n < 1 then break end
-        for x = 0, n - 1 do
-            for z = 0, n - 1 do
-                newBlockPart(blockName, Vector3.new(size,size,size), base + Vector3.new((x - n/2)*size, l*size, (z - n/2)*size))
-                task.wait(state.buildSpeed)
-            end
-        end
-    end
-end
-
-local function buildCylinder(base, N, size, blockName)
-    local rings = math.max(3, math.floor(N / 8))
-    for h = 0, rings - 1 do
-        for i = 1, 10 do
-            local a = (i / 10) * math.pi * 2
-            newBlockPart(blockName, Vector3.new(size,size,size), base + Vector3.new(math.cos(a)*size*2, h*size, math.sin(a)*size*2))
-            task.wait(state.buildSpeed)
-        end
-    end
-end
-
-local function buildWall(base, N, size, blockName)
-    local w = math.max(3, math.floor(math.sqrt(N)))
-    local h = math.max(2, math.floor(N / w))
-    for x = 0, w-1 do
-        for y = 0, h-1 do
-            newBlockPart(blockName, Vector3.new(size,size,size), base + Vector3.new(x*size, y*size, 0))
-            task.wait(state.buildSpeed)
-        end
-    end
-end
-
-local function buildPlatform(base, N, size, blockName)
-    local side = math.max(3, math.floor(math.sqrt(N)))
-    for x = 0, side-1 do
-        for z = 0, side-1 do
-            newBlockPart(blockName, Vector3.new(size,size,size), base + Vector3.new(x*size, 0, z*size))
-            task.wait(state.buildSpeed)
-        end
-    end
-end
-
-local function buildShape(shape, blockName)
-    if not blockName then blockName = "WoodBlock" end
-    local size = state.buildSize
-    local N = state.blocksPerShape
-    local base = getFrontPos(size * 6)
-    task.spawn(function()
-        if shape == "Шар" then buildBallShell(base, N, size, blockName)
-        elseif shape == "Купол" then buildDome(base, N, size, blockName)
-        elseif shape == "Пирамида" then buildPyramid(base, N, size, blockName)
-        elseif shape == "Цилиндр" then buildCylinder(base, N, size, blockName)
-        elseif shape == "Стена" then buildWall(base, N, size, blockName)
-        elseif shape == "Платформа" then buildPlatform(base, N, size, blockName)
-        end
-    end)
-end
-
--- ═══════════════════════════════════════════
---   ПРЕВЬЮ ПЕРЕД СТРОЙКОЙ
--- ═══════════════════════════════════════════
-local previewParts = {}
-local function clearPreview()
-    for _, p in ipairs(previewParts) do p:Destroy() end
-    previewParts = {}
-end
-
-local function previewShape(shape, blockName)
-    clearPreview()
-    local size = state.buildSize
-    local N = state.blocksPerShape
-    local base = getFrontPos(size * 6)
-    local function add(pos, sh)
-        local p = Instance.new("Part")
-        p.Size = Vector3.new(size,size,size)
-        p.Position = pos
-        p.Anchored = true
-        p.CanCollide = false
-        p.Transparency = 0.55
-        p.Color = Color3.fromRGB(150, 220, 255)
-        p.Material = Enum.Material.Neon
-        if sh == "Ball" then p.Shape = Enum.PartType.Ball end
-        p.Name = "ENI_Preview"
-        p.Parent = workspace
-        table.insert(previewParts, p)
-    end
-    if shape == "Шар" then
-        local R = size * 2.5
-        local total = math.max(12, N)
-        for i = 1, total do
-            local phi = math.acos(1 - 2 * (i - 0.5) / total)
-            local theta = math.pi * (1 + 5^0.5) * i
-            local x = R * math.sin(phi) * math.cos(theta)
-            local y = R * math.cos(phi)
-            local z = R * math.sin(phi) * math.sin(theta)
-            add(base + Vector3.new(x, y, z), "Ball")
-        end
-    elseif shape == "Купол" then
-        local R = size * 3
-        for ring = 1, 4 do
-            local phi = (ring / 5) * math.pi / 2
-            local r = R * math.sin(phi)
-            local y = R * math.cos(phi)
-            for i = 1, 8 do
-                local theta = (i / 8) * math.pi * 2
-                add(base + Vector3.new(r*math.cos(theta), y, r*math.sin(theta)))
-            end
-        end
-    elseif shape == "Пирамида" then
-        local side = math.max(2, math.floor(math.sqrt(N)))
-        for l = 0, side-1 do
-            local n = side - l
-            if n < 1 then break end
-            for x = 0, n-1 do for z = 0, n-1 do
-                add(base + Vector3.new((x - n/2)*size, l*size, (z - n/2)*size))
-            end end
-        end
-    elseif shape == "Цилиндр" then
-        for h = 0, 4 do
-            for i = 1, 10 do
-                local a = (i / 10) * math.pi * 2
-                add(base + Vector3.new(math.cos(a)*size*2, h*size, math.sin(a)*size*2))
-            end
-        end
-    elseif shape == "Стена" then
-        local w = math.max(3, math.floor(math.sqrt(N)))
-        local h = math.max(2, math.floor(N / w))
-        for x = 0, w-1 do for y = 0, h-1 do
-            add(base + Vector3.new(x*size, y*size, 0))
-        end end
-    elseif shape == "Платформа" then
-        local side = math.max(3, math.floor(math.sqrt(N)))
-        for x = 0, side-1 do for z = 0, side-1 do
-            add(base + Vector3.new(x*size, 0, z*size))
-        end end
-    end
-    state.previewing = true
-    state.status = "превью: " .. shape
-end
-
--- ═══════════════════════════════════════════
---   ДЮП
--- ═══════════════════════════════════════════
-local selectingDup = false
-local function pickPartByScreen(pos)
-    local cam = workspace.CurrentCamera
-    local ray = cam:ViewportPointToRay(pos.X, pos.Y)
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {lp.Character}
-    local res = workspace:Raycast(ray.Origin, ray.Direction * 500, params)
-    return res and res.Instance or nil
-end
-
-local function startDupMode()
-    selectingDup = true
-    state.status = "дюп: тапни предмет"
-    local conn
-    conn = UIS.InputBegan:Connect(function(input, gp)
-        if gp then return end
-        if not selectingDup then conn:Disconnect(); return end
-        if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
-        local hit = pickPartByScreen(input.Position)
-        if hit and hit:IsA("BasePart") then
-            local basePos = hit.Position
-            local rightVec = workspace.CurrentCamera.CFrame.RightVector
-            rightVec = Vector3.new(rightVec.X, 0, rightVec.Z).Unit
-            for dist = 2, 12, 2 do
-                local tryPos = basePos + rightVec * dist
-                local params = OverlapParams.new()
-                params.FilterDescendantsInstances = {lp.Character}
-                params.FilterType = Enum.RaycastFilterType.Exclude
-                local parts = workspace:GetPartBoundsInBox(CFrame.new(tryPos), hit.Size * 0.95, params)
-                local blocked = false
-                for _, p in ipairs(parts) do
-                    if p ~= hit and p:IsA("BasePart") and p.CanCollide then blocked = true; break end
-                end
-                if not blocked then
-                    local clone = hit:Clone()
-                    clone.Anchored = true
-                    clone.CFrame = CFrame.new(tryPos) * (hit.CFrame - hit.Position)
-                    clone.Parent = workspace
-                    print("[ENI] дюп на", dist)
-                    break
-                end
-            end
-        end
-        selectingDup = false
-        state.status = "дюп готов"
-        conn:Disconnect()
-    end)
-end
-
--- ═══════════════════════════════════════════
---   UI v8.0 «Winter»
+--   UI v8.1 «Winter» — 2 вкладки
 -- ═══════════════════════════════════════════
 local C = {
     ice        = Color3.fromRGB(180, 230, 255),
@@ -659,7 +344,7 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.Parent = CoreGui
 
--- слой снега поверх
+-- снег поверх экрана
 local snowLayer = Instance.new("Frame", gui)
 snowLayer.Size = UDim2.new(1, 0, 1, 0)
 snowLayer.BackgroundTransparency = 1
@@ -688,7 +373,7 @@ task.spawn(function()
     end
 end)
 
--- float кнопка
+-- float
 local floatBtn = Instance.new("TextButton", gui)
 floatBtn.Size = UDim2.new(0, 170, 0, 34)
 floatBtn.Position = UDim2.new(0.5, -85, 0, 8)
@@ -717,10 +402,10 @@ task.spawn(function()
     end
 end)
 
--- главное окно
+-- main
 local main = Instance.new("Frame", gui)
-main.Size = UDim2.new(0, 680, 0, 400)
-main.Position = UDim2.new(0.5, -340, 0.5, -200)
+main.Size = UDim2.new(0, 640, 0, 380)
+main.Position = UDim2.new(0.5, -320, 0.5, -190)
 main.BackgroundColor3 = C.dark
 main.BackgroundTransparency = 0.15
 main.BorderSizePixel = 0
@@ -740,7 +425,6 @@ mainGrad.Rotation = 135
 local outerGlow = Instance.new("UIStroke", main)
 outerGlow.Thickness = 1.5; outerGlow.Color = C.ice; outerGlow.Transparency = 0.35
 
--- замёрзшая кромка (лёд)
 local iceEdge = Instance.new("Frame", main)
 iceEdge.Size = UDim2.new(1, -20, 0, 3)
 iceEdge.Position = UDim2.new(0, 10, 0, 0)
@@ -749,7 +433,7 @@ iceEdge.BackgroundTransparency = 0.4
 iceEdge.BorderSizePixel = 0
 Instance.new("UICorner", iceEdge).CornerRadius = UDim.new(1, 0)
 
--- снежинки на фоне окна
+-- снежинки-иконки внутри окна
 task.spawn(function()
     while gui.Parent do
         task.wait(1.2)
@@ -797,7 +481,7 @@ UIS.InputChanged:Connect(function(input)
     if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
     local dx = input.Position.X - resizeStart.X
     local dy = input.Position.Y - resizeStart.Y
-    main.Size = UDim2.new(0, math.clamp(resizeOrigin.X + dx, 520, 1100), 0, math.clamp(resizeOrigin.Y + dy, 300, 700))
+    main.Size = UDim2.new(0, math.clamp(resizeOrigin.X + dx, 480, 1100), 0, math.clamp(resizeOrigin.Y + dy, 280, 700))
 end)
 UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -831,7 +515,7 @@ local htitle = Instance.new("TextLabel", header)
 htitle.Size = UDim2.new(0.6, 0, 1, 0)
 htitle.Position = UDim2.new(0, 18, 0, 0)
 htitle.BackgroundTransparency = 1
-htitle.Text = "❄ ENI • Winter  v8.0"
+htitle.Text = "❄ ENI • Winter  v8.1"
 htitle.TextColor3 = C.snow
 htitle.Font = Enum.Font.GothamBold
 htitle.TextSize = 15
@@ -869,7 +553,7 @@ minBtn.TextSize = 16
 minBtn.BorderSizePixel = 0
 Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 9)
 
--- tabs
+-- tabs (2 вкладки)
 local tabsCol = Instance.new("Frame", main)
 tabsCol.Size = UDim2.new(0, 112, 1, -110)
 tabsCol.Position = UDim2.new(0, 10, 0, 54)
@@ -885,7 +569,6 @@ tabsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 local tabData = {
     {name = "❄ Авто"},
-    {name = "🏗 Билд"},
     {name = "⚡ Хакер"},
 }
 local tabBtns = {}
@@ -943,7 +626,6 @@ local function makeContent()
 end
 local content1 = makeContent(); content1.Visible = true
 local content2 = makeContent()
-local content3 = makeContent()
 
 -- components
 local toggleRefs = {}
@@ -1105,9 +787,7 @@ local function makeRow(parent, order)
     return r
 end
 
--- ═══════════════════════════════════════════
---   ВКЛАДКА АВТО
--- ═══════════════════════════════════════════
+-- ═══ ВКЛАДКА АВТО ═══
 local r1 = makeRow(content1, 1)
 makeToggle(r1, "❄ TP-Фарм", "телепорт по зонам", function(v) state.farm = v end, C.aurora)
 makeToggle(r1, "🌨 Флай-Фарм", "плавный полёт", function(v) state.flyFarm = v; if v then state.farm = true end end, C.ice)
@@ -1164,341 +844,15 @@ task.spawn(function()
     end
 end)
 
--- ═══════════════════════════════════════════
---   ВКЛАДКА БИЛД
--- ═══════════════════════════════════════════
--- dropdown фигур
-local buildTop = makeRow(content2, 1)
-
-local shapeDropdownBtn = Instance.new("TextButton", buildTop)
-shapeDropdownBtn.Size = UDim2.new(0, 190, 0, 52)
-shapeDropdownBtn.BackgroundColor3 = C.darkMild
-shapeDropdownBtn.Text = ""
-shapeDropdownBtn.BorderSizePixel = 0
-Instance.new("UICorner", shapeDropdownBtn).CornerRadius = UDim.new(0, 14)
-local sdbStroke = Instance.new("UIStroke", shapeDropdownBtn)
-sdbStroke.Thickness = 1; sdbStroke.Color = C.ice; sdbStroke.Transparency = 0.35
-
-local sdbLabel = Instance.new("TextLabel", shapeDropdownBtn)
-sdbLabel.Size = UDim2.new(1, -40, 0, 20)
-sdbLabel.Position = UDim2.new(0, 12, 0, 6)
-sdbLabel.BackgroundTransparency = 1
-sdbLabel.Text = "ФИГУРА: " .. state.selectedShape
-sdbLabel.TextColor3 = C.ice
-sdbLabel.Font = Enum.Font.GothamBold
-sdbLabel.TextSize = 12
-sdbLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local sdbSub = Instance.new("TextLabel", shapeDropdownBtn)
-sdbSub.Size = UDim2.new(1, -40, 0, 14)
-sdbSub.Position = UDim2.new(0, 12, 0, 30)
-sdbSub.BackgroundTransparency = 1
-sdbSub.Text = "тапни — выпадет список"
-sdbSub.TextColor3 = C.gray
-sdbSub.Font = Enum.Font.Gotham
-sdbSub.TextSize = 10
-sdbSub.TextXAlignment = Enum.TextXAlignment.Left
-
-local sdbArrow = Instance.new("TextLabel", shapeDropdownBtn)
-sdbArrow.Size = UDim2.new(0, 24, 1, 0)
-sdbArrow.Position = UDim2.new(1, -28, 0, 0)
-sdbArrow.BackgroundTransparency = 1
-sdbArrow.Text = "▼"
-sdbArrow.TextColor3 = C.ice
-sdbArrow.Font = Enum.Font.GothamBold
-sdbArrow.TextSize = 12
-
--- dropdown список блоков (МОИ блоки)
-local blockDropdownBtn = Instance.new("TextButton", buildTop)
-blockDropdownBtn.Size = UDim2.new(0, 190, 0, 52)
-blockDropdownBtn.BackgroundColor3 = C.darkMild
-blockDropdownBtn.Text = ""
-blockDropdownBtn.BorderSizePixel = 0
-Instance.new("UICorner", blockDropdownBtn).CornerRadius = UDim.new(0, 14)
-local bdbStroke = Instance.new("UIStroke", blockDropdownBtn)
-bdbStroke.Thickness = 1; bdbStroke.Color = C.aurora; bdbStroke.Transparency = 0.35
-
-local bdbLabel = Instance.new("TextLabel", blockDropdownBtn)
-bdbLabel.Size = UDim2.new(1, -40, 0, 20)
-bdbLabel.Position = UDim2.new(0, 12, 0, 6)
-bdbLabel.BackgroundTransparency = 1
-bdbLabel.Text = "БЛОК: выбери"
-bdbLabel.TextColor3 = C.aurora
-bdbLabel.Font = Enum.Font.GothamBold
-bdbLabel.TextSize = 12
-bdbLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local bdbSub = Instance.new("TextLabel", blockDropdownBtn)
-bdbSub.Size = UDim2.new(1, -40, 0, 14)
-bdbSub.Position = UDim2.new(0, 12, 0, 30)
-bdbSub.BackgroundTransparency = 1
-bdbSub.Text = "из твоего инвентаря"
-bdbSub.TextColor3 = C.gray
-bdbSub.Font = Enum.Font.Gotham
-bdbSub.TextSize = 10
-bdbSub.TextXAlignment = Enum.TextXAlignment.Left
-
-local bdbArrow = Instance.new("TextLabel", blockDropdownBtn)
-bdbArrow.Size = UDim2.new(0, 24, 1, 0)
-bdbArrow.Position = UDim2.new(1, -28, 0, 0)
-bdbArrow.BackgroundTransparency = 1
-bdbArrow.Text = "▼"
-bdbArrow.TextColor3 = C.aurora
-bdbArrow.Font = Enum.Font.GothamBold
-bdbArrow.TextSize = 12
-
--- превью фигуры
-local previewBox = Instance.new("Frame", buildTop)
-previewBox.Size = UDim2.new(0, 120, 0, 100)
-previewBox.BackgroundColor3 = C.darkMild
-previewBox.BorderSizePixel = 0
-Instance.new("UICorner", previewBox).CornerRadius = UDim.new(0, 14)
-local pbStroke = Instance.new("UIStroke", previewBox)
-pbStroke.Thickness = 1; pbStroke.Color = C.ice; pbStroke.Transparency = 0.35
-
-local shapeViewport = Instance.new("ViewportFrame", previewBox)
-shapeViewport.Size = UDim2.new(1, -10, 1, -10)
-shapeViewport.Position = UDim2.new(0, 5, 0, 5)
-shapeViewport.BackgroundColor3 = Color3.fromRGB(8, 14, 24)
-shapeViewport.BorderSizePixel = 0
-Instance.new("UICorner", shapeViewport).CornerRadius = UDim.new(0, 10)
-
-local previewCam = Instance.new("Camera")
-previewCam.FieldOfView = 45
-shapeViewport.CurrentCamera = previewCam
-
-local function updateShapePreview(shapeName)
-    for _, c in ipairs(shapeViewport:GetChildren()) do
-        if c:IsA("Model") or c:IsA("Part") then c:Destroy() end
-    end
-    local m = Instance.new("Model", shapeViewport)
-    local sz = 0.7
-    local N = math.max(12, math.min(state.blocksPerShape, 40))
-    local function add(pos, sh)
-        local p = Instance.new("Part")
-        p.Size = Vector3.new(sz,sz,sz); p.Position = pos; p.Anchored = true
-        p.Color = C.ice; p.Material = Enum.Material.Neon
-        if sh == "Ball" then p.Shape = Enum.PartType.Ball end
-        p.Parent = m
-    end
-    if shapeName == "Шар" then
-        local R = sz * 3
-        for i = 1, N do
-            local phi = math.acos(1 - 2*(i-0.5)/N)
-            local theta = math.pi * (1 + 5^0.5) * i
-            add(Vector3.new(R*math.sin(phi)*math.cos(theta), R*math.cos(phi), R*math.sin(phi)*math.sin(theta)), "Ball")
-        end
-    elseif shapeName == "Купол" then
-        local R = sz*3
-        for ring = 1, 4 do
-            local phi = (ring/5)*math.pi/2
-            local r = R*math.sin(phi); local y = R*math.cos(phi)
-            for i = 1, 8 do
-                local theta = (i/8)*math.pi*2
-                add(Vector3.new(r*math.cos(theta), y, r*math.sin(theta)))
-            end
-        end
-    elseif shapeName == "Пирамида" then
-        local side = math.max(2, math.floor(math.sqrt(N)))
-        for l = 0, side-1 do
-            local n = side - l; if n < 1 then break end
-            for x = 0, n-1 do for z = 0, n-1 do
-                add(Vector3.new((x-n/2)*1, l*1, (z-n/2)*1))
-            end end
-        end
-    elseif shapeName == "Цилиндр" then
-        for h = 0, 4 do for i = 1, 10 do
-            local a = (i/10)*math.pi*2
-            add(Vector3.new(math.cos(a)*1.8, h*1, math.sin(a)*1.8))
-        end end
-    elseif shapeName == "Стена" then
-        for x = -2, 2 do for y = 0, 2 do add(Vector3.new(x*1, y*1, 0)) end end
-    elseif shapeName == "Платформа" then
-        for x = -2, 2 do for z = -2, 2 do add(Vector3.new(x*1, 0, z*1)) end end
-    end
-    local cf, size = m:GetBoundingBox()
-    local dist = math.max(size.X, size.Y, size.Z) * 2.2
-    previewCam.CFrame = CFrame.new(cf.Position + Vector3.new(dist, dist*0.7, dist), cf.Position)
-end
-updateShapePreview(state.selectedShape)
-
--- dropdown контейнеры
-local shapeDropdown = Instance.new("ScrollingFrame", main)
-shapeDropdown.Size = UDim2.new(0, 200, 0, 180)
-shapeDropdown.Position = UDim2.new(0, 148, 0, 80)
-shapeDropdown.BackgroundColor3 = C.darkMild
-shapeDropdown.BorderSizePixel = 0
-shapeDropdown.ScrollBarThickness = 3
-shapeDropdown.ScrollBarImageColor3 = C.ice
-shapeDropdown.Visible = false
-shapeDropdown.ZIndex = 80
-Instance.new("UICorner", shapeDropdown).CornerRadius = UDim.new(0, 12)
-local sdStroke = Instance.new("UIStroke", shapeDropdown)
-sdStroke.Thickness = 1; sdStroke.Color = C.ice; sdStroke.Transparency = 0.3
-local sdl = Instance.new("UIListLayout", shapeDropdown)
-sdl.Padding = UDim.new(0, 4); sdl.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-for i, shape in ipairs(SHAPES) do
-    local item = Instance.new("TextButton", shapeDropdown)
-    item.Size = UDim2.new(1, -8, 0, 34)
-    item.BackgroundColor3 = C.dark
-    item.Text = shape
-    item.TextColor3 = C.frost
-    item.Font = Enum.Font.GothamBold
-    item.TextSize = 12
-    item.BorderSizePixel = 0
-    item.LayoutOrder = i
-    Instance.new("UICorner", item).CornerRadius = UDim.new(0, 8)
-    item.MouseButton1Click:Connect(function()
-        state.selectedShape = shape
-        sdbLabel.Text = "ФИГУРА: " .. shape
-        updateShapePreview(shape)
-        shapeDropdown.Visible = false
-    end)
-end
-
--- блоки (мои) dropdown
-local blockDropdown = Instance.new("ScrollingFrame", main)
-blockDropdown.Size = UDim2.new(0, 200, 0, 220)
-blockDropdown.Position = UDim2.new(0, 348, 0, 80)
-blockDropdown.BackgroundColor3 = C.darkMild
-blockDropdown.BorderSizePixel = 0
-blockDropdown.ScrollBarThickness = 3
-blockDropdown.ScrollBarImageColor3 = C.aurora
-blockDropdown.Visible = false
-blockDropdown.ZIndex = 80
-Instance.new("UICorner", blockDropdown).CornerRadius = UDim.new(0, 12)
-local bdStroke = Instance.new("UIStroke", blockDropdown)
-bdStroke.Thickness = 1; bdStroke.Color = C.aurora; bdStroke.Transparency = 0.3
-local bdl = Instance.new("UIListLayout", blockDropdown)
-bdl.Padding = UDim.new(0, 4); bdl.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-local function refreshBlockDropdown()
-    for _, c in ipairs(blockDropdown:GetChildren()) do
-        if c:IsA("TextButton") then c:Destroy() end
-    end
-    local owned = getOwnedBlocks()
-    if #owned == 0 then
-        local e = Instance.new("TextButton", blockDropdown)
-        e.Size = UDim2.new(1, -8, 0, 34)
-        e.BackgroundColor3 = C.dark
-        e.Text = "возьми молоток в руки"
-        e.TextColor3 = C.gray
-        e.Font = Enum.Font.Gotham
-        e.TextSize = 11
-        e.BorderSizePixel = 0
-        return
-    end
-    for i, info in ipairs(owned) do
-        local item = Instance.new("TextButton", blockDropdown)
-        item.Size = UDim2.new(1, -8, 0, 34)
-        item.BackgroundColor3 = C.dark
-        item.Text = string.format("%s  (%d)", info.name, info.amount)
-        item.TextColor3 = C.frost
-        item.Font = Enum.Font.GothamBold
-        item.TextSize = 11
-        item.BorderSizePixel = 0
-        item.LayoutOrder = i
-        Instance.new("UICorner", item).CornerRadius = UDim.new(0, 8)
-        item.MouseButton1Click:Connect(function()
-            state.selectedBlock = info.name
-            bdbLabel.Text = "БЛОК: " .. info.name
-            blockDropdown.Visible = false
-        end)
-    end
-end
-refreshBlockDropdown()
-
-shapeDropdownBtn.MouseButton1Click:Connect(function()
-    shapeDropdown.Visible = not shapeDropdown.Visible
-    blockDropdown.Visible = false
-end)
-blockDropdownBtn.MouseButton1Click:Connect(function()
-    refreshBlockDropdown()
-    blockDropdown.Visible = not blockDropdown.Visible
-    shapeDropdown.Visible = false
-end)
-
--- кнопки строить/превью/дюп
-local buildActions = makeRow(content2, 2)
-
-local function makeAction(parent, label, sublabel, color, onClick, width)
-    local btn = Instance.new("TextButton", parent)
-    btn.Size = UDim2.new(0, width or 150, 0, 54)
-    btn.BackgroundColor3 = C.darkMild
-    btn.Text = ""
-    btn.BorderSizePixel = 0
-    btn.LayoutOrder = #parent:GetChildren()
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 14)
-    local st = Instance.new("UIStroke", btn)
-    st.Thickness = 1; st.Color = color; st.Transparency = 0.4
-
-    local nameLbl = Instance.new("TextLabel", btn)
-    nameLbl.Size = UDim2.new(1, -14, 0, 20)
-    nameLbl.Position = UDim2.new(0, 10, 0, 8)
-    nameLbl.BackgroundTransparency = 1
-    nameLbl.Text = label
-    nameLbl.TextColor3 = C.frost
-    nameLbl.Font = Enum.Font.GothamBold
-    nameLbl.TextSize = 12
-    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    local subLbl = Instance.new("TextLabel", btn)
-    subLbl.Size = UDim2.new(1, -14, 0, 14)
-    subLbl.Position = UDim2.new(0, 10, 0, 30)
-    subLbl.BackgroundTransparency = 1
-    subLbl.Text = sublabel
-    subLbl.TextColor3 = C.gray
-    subLbl.Font = Enum.Font.Gotham
-    subLbl.TextSize = 10
-    subLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-    btn.MouseButton1Click:Connect(function()
-        onClick()
-    end)
-    return btn
-end
-
-makeAction(buildActions, "❄ ПРЕВЬЮ", "показать как будет", C.ice, function()
-    previewShape(state.selectedShape, state.selectedBlock)
-end, 130)
-makeAction(buildActions, "✓ СТРОИТЬ", "поставить фигуру", C.aurora, function()
-    clearPreview()
-    state.previewing = false
-    buildShape(state.selectedShape, state.selectedBlock)
-end, 130)
-makeAction(buildActions, "✕ ОТМЕНА", "убрать превью", C.gold, function()
-    clearPreview()
-    state.previewing = false
-    state.status = "превью убрано"
-end, 110)
-makeAction(buildActions, "🧬 ДЮП", "тап предмет → копия", C.ice, startDupMode, 130)
-
--- слайдеры размера/блоков/скорости
-local buildSliders = makeRow(content2, 3)
-makeSlider(buildSliders, "РАЗМЕР", BUILD_SIZE_STEPS, 2, C.ice,
-    function(v) return string.format("📏 РАЗМЕР  %d", v) end,
-    function(v) state.buildSize = v; if state.previewing then previewShape(state.selectedShape, state.selectedBlock) end end, 165)
-makeSlider(buildSliders, "БЛОКОВ В ФИГУРУ", BLOCKS_COUNT_STEPS, 3, C.aurora,
-    function(v) return string.format("🧊 БЛОКОВ  %d", v) end,
-    function(v) state.blocksPerShape = v; updateShapePreview(state.selectedShape); if state.previewing then previewShape(state.selectedShape, state.selectedBlock) end end, 200)
-makeSlider(buildSliders, "СКОРОСТЬ", BUILD_SPEED_STEPS, 1, C.gold,
-    function(v) return string.format("🏗 СКОРОСТЬ  %.2f", v) end,
-    function(v) state.buildSpeed = v end, 200)
-
--- ═══════════════════════════════════════════
---   ВКЛАДКА ХАКЕР
--- ═══════════════════════════════════════════
-local h1 = makeRow(content3, 1)
+-- ═══ ВКЛАДКА ХАКЕР ═══
+local h1 = makeRow(content2, 1)
 makeToggle(h1, "🕊 Fly V3", "плавный полёт WASD", function(v)
     state.flyV3 = v
     if v then startFlyV3() else stopFlyV3() end
 end, C.aurora)
 makeToggle(h1, "👻 NoClip", "сквозь изоляцию", function(v) state.noClip = v end, C.ice)
 
--- ═══════════════════════════════════════════
---   НАСТРОЙКИ
--- ═══════════════════════════════════════════
+-- ═══ НАСТРОЙКИ ═══
 local settingsPanel = Instance.new("Frame", main)
 settingsPanel.Size = UDim2.new(1, -20, 1, -110)
 settingsPanel.Position = UDim2.new(0, 10, 0, 54)
@@ -1538,7 +892,6 @@ stopBtn.MouseButton1Click:Connect(function()
     state.farm = false; state.flyFarm = false; state.antiafk = false
     state.flyV3 = false; state.noClip = false
     stopFlyV3()
-    clearPreview()
     state.status = "всё остановлено"
     stopBtn.Text = "✓  ОСТАНОВЛЕНО"
     task.wait(1)
@@ -1568,7 +921,7 @@ local infoT2 = Instance.new("TextLabel", infoBox)
 infoT2.Size = UDim2.new(1, -20, 0, 22)
 infoT2.Position = UDim2.new(0, 10, 0, 36)
 infoT2.BackgroundTransparency = 1
-infoT2.Text = "Сборка: ENI Winter v8.0"
+infoT2.Text = "Сборка: ENI Winter v8.1"
 infoT2.TextColor3 = C.ice
 infoT2.Font = Enum.Font.Gotham
 infoT2.TextSize = 12
@@ -1606,7 +959,7 @@ gearBtn.MouseButton1Click:Connect(function()
     settingsPanel.Visible = not settingsPanel.Visible
 end)
 
--- юзер-бар
+-- ═══ ЮЗЕР-БАР ═══
 local userBar = Instance.new("Frame", main)
 userBar.Size = UDim2.new(1, -20, 0, 44)
 userBar.Position = UDim2.new(0, 10, 1, -52)
@@ -1653,7 +1006,7 @@ userIdLbl.TextSize = 10
 userIdLbl.TextXAlignment = Enum.TextXAlignment.Left
 userIdLbl.ZIndex = 41
 
--- анимации
+-- ═══ АНИМАЦИИ ═══
 local shown = true
 local function hideMain()
     if not shown then return end
@@ -1680,8 +1033,8 @@ local function showMain()
     main.Position = UDim2.new(0.5, -5, 0.5, -5)
     main.BackgroundTransparency = 1
     TweenService:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Back), {
-        Size = UDim2.new(0, 680, 0, 400),
-        Position = UDim2.new(0.5, -340, 0.5, -200),
+        Size = UDim2.new(0, 640, 0, 380),
+        Position = UDim2.new(0.5, -320, 0.5, -190),
         BackgroundTransparency = 0.15,
     }):Play()
 end
@@ -1695,8 +1048,8 @@ main.BackgroundTransparency = 1
 task.spawn(function()
     task.wait(0.1)
     TweenService:Create(main, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 680, 0, 400),
-        Position = UDim2.new(0.5, -340, 0.5, -200),
+        Size = UDim2.new(0, 640, 0, 380),
+        Position = UDim2.new(0.5, -320, 0.5, -190),
         BackgroundTransparency = 0.15,
     }):Play()
     for i = 1, 3 do
@@ -1707,4 +1060,4 @@ task.spawn(function()
     end
 end)
 
-print("[ENI] Winter v8.0 loaded. го, LO.")
+print("[ENI] Winter v8.1 loaded. го, LO.")
