@@ -288,25 +288,35 @@ RunService.RenderStepped:Connect(function()
     flyBG.CFrame = cam.CFrame
 end)
 
--- ═══ NOCLIP ═══
+-- ENI Winter v8.2 | для LO
+-- Полная версия — тот же v8.1, но NoClip-кэш переделан.
+
+-- ═══ NOCLIP (патч v8.2, без лагов) ═══
 local cachedParts = {}
 task.spawn(function()
-    while task.wait(1) do
-        cachedParts = {}
+    while task.wait(2) do
+        if not state.noClip then
+            cachedParts = {}
+            continue
+        end
         local char = lp.Character
         if not char then continue end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
-        for _, obj in ipairs(workspace:GetDescendants()) do
+        local newCache = {}
+        local root = workspace:FindFirstChild("Boat") or workspace
+        for _, obj in ipairs(root:GetDescendants()) do
             if obj:IsA("BasePart") and obj.CanCollide then
-                if (obj.Position - hrp.Position).Magnitude < 120 then
+                local d = (obj.Position - hrp.Position).Magnitude
+                if d < 80 then
                     local nm = obj.Name:lower()
                     if nm:find("barrier") or nm:find("wall") or nm:find("gate") or nm:find("isolat") or nm:find("door") then
-                        table.insert(cachedParts, obj)
+                        table.insert(newCache, obj)
                     end
                 end
             end
         end
+        cachedParts = newCache
     end
 end)
 
